@@ -2,9 +2,8 @@
 import numpy as np
 import scipy.optimize as optimize
 import random
-
-from utils import load_musk1_data, preprocess_musk1_data
 from sklearn import cross_validation
+from data_utils import load_musk1_data
 
 
 _floatX = np.float32
@@ -140,6 +139,7 @@ class DiverseDensity(object):
 
         return bags_label, bags_prob, instances_label, instances_prob
 
+
 def toy_example():
 
     dd_classifier = DiverseDensity()
@@ -236,7 +236,6 @@ def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, sca
     dd_classifier = DiverseDensity()
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
-    bags = preprocess_musk1_data(bags)
     if split_ratio is None and cv_fold is None:
         targets, scales, fvals = dd_classifier.train(bags, scale_indicator, epochs)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
@@ -286,4 +285,4 @@ def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, sca
 
 if __name__ == '__main__':
     # toy_example()
-    dd_musk1(split_ratio=None, cv_fold=10, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10)
+    dd_musk1(split_ratio=None, cv_fold=None, aggregate='max', threshold=0.5, scale_indicator=1, epochs=10)

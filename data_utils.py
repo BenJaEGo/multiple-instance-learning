@@ -9,9 +9,43 @@ from sklearn import preprocessing
 
 
 _floatX = np.float32
+_intX = np.int8
 
 
-def load_musk1_data(file_path, prepro_func=None):
+
+def load_feature_from_txt(file_path, cv_ratio=None):
+
+    feature = list()
+    label = list()
+    with open(file_path) as f:
+        for line in f.readlines():
+            line_split = line.split(',')
+            instance_attribute = np.asarray(line_split[0:-1], dtype=_floatX)
+            instance_label = line_split[-1]
+            feature.append(instance_attribute)
+            label.append(instance_label)
+    feature = np.asarray(feature)
+    label = np.asarray(label, dtype=_intX)
+
+    # print(feature.shape)
+    # print(feature.dtype)
+    # print(label.shape)
+    # print(label.dtype)
+
+    if cv_ratio is None:
+        print('feature size is: ', feature.shape)
+        print('label size is: ', label.shape)
+        return feature, label
+    else:
+        x_train, x_test, y_train, y_test = cross_validation.train_test_split(feature, label,
+                                                                             test_size=cv_ratio,
+                                                                             random_state=0)
+        print('training set size is: ', x_train.shape[0])
+        print('testing set size is: ', x_test.shape[0])
+        return x_train, y_train, x_test, y_test
+
+
+def load_musk1_data(file_path):
 
     instances_info = list()
 
@@ -55,14 +89,13 @@ def load_musk1_data(file_path, prepro_func=None):
     for bag in bags:
         n_instances = len(bag['instances'])
         bag['instances'] = np.asarray(bag['instances'], dtype=_floatX)
+        # preprocess for musk data on dd method according to paper
+        bag['instances'] /= 100
         bag['label'] = max(bag['label'])
         bag['prob'] = 0
         bag['inst_prob'] = np.zeros([n_instances, ])
         bag['starting_point'] = np.zeros([n_instances, ])
         bag_labels.append(bag['label'])
-
-    if prepro_func is not None:
-        bags = prepro_func(bags)
 
     return bags, bag_labels
 
@@ -105,9 +138,9 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
         pickle.dump(feature, f)
 
     if data_type == 'preictal':
-        label = np.ones(shape=[feature.shape[0], feature.shape[1]], dtype=np.int8)
+        label = np.ones(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
     elif data_type == 'interictal':
-        label = np.zeros(shape=[feature.shape[0], feature.shape[1]], dtype=np.int8)
+        label = np.zeros(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
     else:
         label = None
 
@@ -127,7 +160,12 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
     with gzip.open(filename, 'r') as f:
         preictal_label = pickle.load(f)
 
+    preictal_feature = preictal_feature[0:24, :, :]
+    preictal_label = preictal_label[0:24, :]
+
     d0, d1, d2 = preictal_feature.shape
+    print('preictal feature shape: ', preictal_feature.shape)
+    print('preictal label shape: ', preictal_label.shape)
     preictal_feature = preictal_feature.reshape(d0 * d1, d2)
     preictal_label = preictal_label.reshape(d0 * d1, 1)
 
@@ -140,12 +178,32 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
     with gzip.open(filename, 'r') as f:
         interictal_label = pickle.load(f)
 
+    interictal_feature = interictal_feature[0:24, :, :]
+    interictal_label = interictal_label[0:24, :]
+
     d0, d1, d2 = interictal_feature.shape
+    print('interictal feature shape: ', interictal_feature.shape)
+    print('interictal label shape: ', interictal_label.shape)
     interictal_feature = interictal_feature.reshape(d0 * d1, d2)
     interictal_label = interictal_label.reshape(d0 * d1, 1)
 
-    feature = np.vstack((interictal_feature, preictal_feature))
+
+
+    feature = np.vstack((interictal_feature, preictal_feature)).squeeze()
     label = np.vstack((interictal_label, preictal_label)).squeeze()
+
+    # print(feature.shape)
+    # print(np.max(feature))
+    # print(np.min(feature))
+    # print(feature[0, :])
+    # feature = preprocessing.normalize(feature, norm='l2', axis=0)
+    # print(feature.shape)
+    # print(np.max(feature))
+    # print(np.min(feature))
+    # feature = preprocessing.scale(feature, axis=1)
+    # print(feature[:, 0])
+    feature = preprocessing.minmax_scale(feature, feature_range=(0, 1), axis=0)
+    # print(feature[:, 0])
 
     if cv_ratio is None:
         print('feature size is: ', feature.shape)
@@ -157,5 +215,5 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
                                                                              random_state=0)
         print('training set size is: ', x_train.shape[0])
         print('testing set size is: ', x_test.shape[0])
-        return x_train, y_train, x_test, y_test
+        return x_train, x_test, y_train, y_test
 
