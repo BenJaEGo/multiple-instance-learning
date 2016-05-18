@@ -109,11 +109,9 @@ class DiverseDensity(object):
                        self.diverse_density_nll(init_params, bags),
                        self.diverse_density_nll(r_params.x, bags)))
                 targets.append(r_params.x)
+                scales.append(np.ones(n_dim,))
                 func_values.append(r_params.fun)
-        if scale_indicator:
-            return targets, scales, func_values
-        else:
-            return targets, func_values
+        return targets, scales, func_values
 
     def predict(self, targets, scales, fvals, bags, aggregate, threshold):
 
@@ -318,4 +316,4 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
 
 if __name__ == '__main__':
     # toy_example()
-    maxDD_musk1(split_ratio=0.2, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10)
+    maxDD_musk1(split_ratio=0.2, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=1)
