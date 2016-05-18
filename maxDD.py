@@ -58,9 +58,20 @@ class DiverseDensity(object):
 
         n_bag = len(bags)
 
+        n_pos_bag = 0
+        max_iter = 0
+        for bag in bags:
+            if bag['label'] == 1:
+                n_pos_bag += 1
+                max_iter += bag['instances'].shape[0]
+        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
+
+        epochs = min(max_iter, epochs)
+        print('total epochs number is %d' % epochs)
+
         targets = list()
         scales = list()
-        fvals = list()
+        func_values = list()
 
         for epoch_idx in range(epochs):
             bag_idx = random.randint(0, n_bag - 1)
@@ -68,37 +79,41 @@ class DiverseDensity(object):
                 bag_idx = random.randint(0, n_bag - 1)
 
             [n_instances, n_dim] = bags[bag_idx]['instances'].shape
-            instance_idx = random.randint(0, n_instances - 1)
-            while bags[bag_idx]['starting_point'][instance_idx] == 1:
-                instance_idx = random.randint(0, n_instances - 1)
+            starting_point_bag = np.asarray(bags[bag_idx]['starting_point'])
+            valuable_idx = np.asarray(np.nonzero(starting_point_bag == 0))
+            if valuable_idx.shape[1] == 1:
+                instance_idx = valuable_idx[0, 0]
+            else:
+                rand_idx = random.randint(0, valuable_idx.shape[1]-1)
+                instance_idx = valuable_idx[0, rand_idx]
             bags[bag_idx]['starting_point'][instance_idx] = 1
 
             if scale_indicator == 1:
                 init_params = np.hstack((bags[bag_idx]['instances'][instance_idx, :], np.ones([n_dim, ])))
-                print('epoch %d, selected instance is from bag %d, label %d, instance %d. nll before optimization %f'
-                      % (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
-                         self.diverse_density_nll(init_params, bags)))
                 r_params = optimize.minimize(self.diverse_density_nll, init_params, args=(bags,), method='L-BFGS-B')
-                print('epoch %d, selected instance is from bag %d, label %d, instance %d. nll after optimization %f'
-                      % (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
-                         self.diverse_density_nll(r_params.x, bags)))
+                print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. '
+                      'nll before optimization is %f, nll after optimization is %f' %
+                      (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
+                       self.diverse_density_nll(init_params, bags),
+                       self.diverse_density_nll(r_params.x, bags)))
                 targets.append(r_params.x[:n_dim])
                 scales.append(r_params.x[n_dim:])
-                fvals.append(r_params.fun)
+                func_values.append(r_params.fun)
 
             else:
                 init_params = bags[bag_idx]['instances'][instance_idx, :]
-                print('epoch %d, selected instance is from <bag %d, instance %d>. nll before optimization %f'
-                      % (epoch_idx, bag_idx, instance_idx, self.diverse_density_nll(init_params, bags)))
                 r_params = optimize.minimize(self.diverse_density_nll, init_params, args=(bags,), method='L-BFGS-B')
-                print('epoch %d, selected instance is from <bag %d, instance %d>. nll after optimization %f'
-                      % (epoch_idx, bag_idx, instance_idx, self.diverse_density_nll(r_params.x, bags)))
+                print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. '
+                      'nll before optimization is %f, nll after optimization is %f' %
+                      (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
+                       self.diverse_density_nll(init_params, bags),
+                       self.diverse_density_nll(r_params.x, bags)))
                 targets.append(r_params.x)
-                fvals.append(r_params.fun)
+                func_values.append(r_params.fun)
         if scale_indicator:
-            return targets, scales, fvals
+            return targets, scales, func_values
         else:
-            return targets, fvals
+            return targets, func_values
 
     def predict(self, targets, scales, fvals, bags, aggregate, threshold):
 
@@ -112,15 +127,17 @@ class DiverseDensity(object):
         fvals = np.asarray(fvals)
         targets = np.asarray(targets)
         scales = np.asarray(scales)
-
+        # with minimum diverse density
         if aggregate == 'max':
             target_idx = np.argmax(fvals)
             target = targets[target_idx]
             scale = scales[target_idx]
+        # with maximum diverse density
         elif aggregate == 'min':
             target_idx = np.argmin(fvals)
             target = targets[target_idx]
             scale = scales[target_idx]
+        # with average diverse density
         elif aggregate == 'avg':
             target = np.mean(targets, axis=0)
             scale = np.mean(scales, axis=0)
@@ -178,7 +195,6 @@ def toy_example():
             n_instances = np.random.randint(1, 20)
             bag['inst_prob'] = np.random.random([n_instances, ])
             bag['starting_point'] = np.zeros([n_instances, ])
-            # bag['instances'] = np.random.random([n_instances, n_dim])
             bag['instances'] = np.random.normal(mu, sig, [n_instances, n_dim])
             train_bags.append(bag)
             idx += 1
@@ -223,7 +239,7 @@ def toy_example():
 
     targets, scales, fvals = dd_classifier.train(train_bags, scale_indicator=1, epochs=1)
 
-    aggregate = 'min'
+    aggregate = 'max'
     threshold = 0.5
 
     p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
@@ -232,7 +248,7 @@ def toy_example():
     print('testing accuracy is: %f' % (sum(test_labels == p_bags_label)/n_test_bags))
 
 
-def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10):
+def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10):
     dd_classifier = DiverseDensity()
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
@@ -242,8 +258,14 @@ def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, sca
                                                                                                fvals, bags,
                                                                                                aggregate, threshold)
         accuracy = sum(bag_labels == p_bags_label) / len(bags)
-        print('training accuracy is: %f' % accuracy)
-    if split_ratio:
+        print('split ratio is %f, training accuracy is: %f' % (split_ratio, accuracy))
+
+        train_result = (targets, scales, fvals)
+        predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
+        data = (bags, bag_labels)
+        return data, train_result, predict_result
+
+    elif split_ratio:
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
@@ -255,10 +277,16 @@ def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, sca
                                                                                                aggregate, threshold)
         accuracy = sum(test_label == p_bags_label) / len(test_bag)
         print('testing accuracy with split ratio %f is: %f' % (split_ratio, accuracy))
-    if cv_fold:
+
+        train_result = (targets, scales, fvals)
+        predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
+        data = (bags, bag_labels)
+        return data, train_result, predict_result
+    elif cv_fold:
         accuracy_list = list()
         n_bags = len(bags)
         kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
+        cf = 1
         for train_idx, test_idx in kf:
             train_bag = list()
             train_label = list()
@@ -277,12 +305,17 @@ def dd_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, sca
                                                                                                    aggregate, threshold)
             accuracy = sum(test_label == p_bags_label) / len(test_bag)
             accuracy_list.append(accuracy)
+            print('current fold: %d, accuracy is: %f' % (cf, accuracy))
+            cf += 1
 
         mean_accuracy = float(np.mean(np.asarray(accuracy_list)))
-        print('accuracy list is :', accuracy_list)
-        print('testing accuracy with %d-fold cross validation is: %f' % (cv_fold, mean_accuracy))
+        print('mean accuracy with %d-fold cross validation is: %f' % (cv_fold, mean_accuracy))
+
+        return accuracy_list
+    else:
+        pass
 
 
 if __name__ == '__main__':
     # toy_example()
-    dd_musk1(split_ratio=None, cv_fold=None, aggregate='max', threshold=0.5, scale_indicator=1, epochs=10)
+    maxDD_musk1(split_ratio=0.2, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10)
