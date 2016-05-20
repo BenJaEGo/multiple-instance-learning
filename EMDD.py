@@ -40,7 +40,7 @@ class EMDiverseDensity(object):
                 fun -= np.log(1 - inst_prob[inst_idx])
         return fun
 
-    def em(self, bags, func_val_tol, scale_indicator, init_target, init_scale):
+    def em(self, bags, scale_indicator, init_target, init_scale, func_val_tol=1e-5):
         target = init_target
         scale = init_scale
 
@@ -48,8 +48,20 @@ class EMDiverseDensity(object):
         func_val_diff = np.inf
         prev_func_val = np.inf
         final_func_val = 0
+
         init_func_val = 0
-        while func_val_diff > func_val_tol:
+        init_func_indicator = 1
+
+        debug_count = 0
+        while final_func_val < prev_func_val and func_val_diff > func_val_tol:
+            # print(prev_func_val, final_func_val, prev_func_val - final_func_val)
+            # print(func_val_diff)
+
+            debug_count += 1
+            if debug_count > 20:
+                print(prev_func_val, final_func_val, func_val_diff, func_val_tol)
+                raise NotImplementedError('loop error..')
+
             selected_instances = list()
             selected_labels = list()
             # select an instance with highest probability from each bag
@@ -66,14 +78,18 @@ class EMDiverseDensity(object):
 
             if scale_indicator == 1:
                 init_params = np.hstack((target, scale))
-                init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                if init_func_indicator == 1:
+                    init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                    init_func_indicator = 0
                 r_params = optimize.minimize(self.diverse_density_nll, init_params,
                                              args=(selected_instances, selected_labels,), method='L-BFGS-B')
                 target = r_params.x[0:n_dim]
                 scale = r_params.x[n_dim:]
             else:
                 init_params = target
-                init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                if init_func_indicator == 1:
+                    init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                    init_func_indicator = 0
                 r_params = optimize.minimize(self.diverse_density_nll, init_params,
                                              args=(selected_instances, selected_labels,), method='L-BFGS-B')
                 target = r_params.x
@@ -82,10 +98,11 @@ class EMDiverseDensity(object):
             final_func_val = r_params.fun
             func_val_diff = prev_func_val - final_func_val
             prev_func_val = final_func_val
+            # print(func_val_diff)
 
         return target, scale, final_func_val, init_func_val
 
-    def train(self, bags, scale_indicator, epochs, func_val_tol=1e-5):
+    def train(self, bags, scale_indicator, epochs):
         n_bag = len(bags)
         n_pos_bag = 0
 
@@ -94,10 +111,10 @@ class EMDiverseDensity(object):
             if bag['label'] == 1:
                 n_pos_bag += 1
                 max_iter += bag['instances'].shape[0]
-        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
 
         epochs = min(max_iter, epochs)
         print('total epochs number is %d' % epochs)
+        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
 
         targets = list()
         scales = list()
@@ -122,7 +139,7 @@ class EMDiverseDensity(object):
             # scale is initialized to one
             print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. ' %
                   (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx), end='')
-            [target, scale, func_val, init_func_val] = self.em(bags, func_val_tol,
+            [target, scale, func_val, init_func_val] = self.em(bags,
                                                                scale_indicator,
                                                                bags[bag_idx]['instances'][instance_idx, :],
                                                                np.ones(n_dim, ))
@@ -182,6 +199,8 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
     if split_ratio is None and cv_fold is None:
+        print('parameters setting: aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d' %
+              (aggregate, threshold, scale_indicator, epochs))
         targets, scales, func_values = dd_classifier.train(bags, scale_indicator, epochs)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
                                                                                                func_values, bags,
@@ -197,6 +216,8 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
         return data, train_result, predict_result
 
     elif split_ratio:
+        print('parameters setting: split ratio = %f, aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d'
+              % (split_ratio, aggregate, threshold, scale_indicator, epochs))
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
@@ -216,6 +237,8 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
         print('time elapsed in EMDD is %f seconds' % (end_time - start_time))
         return data, train_result, predict_result
     elif cv_fold:
+        print('parameters setting: cv fold = %d, aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d'
+              % (cv_fold, aggregate, threshold, scale_indicator, epochs))
         accuracy_list = list()
         n_bags = len(bags)
         kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
@@ -254,4 +277,4 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
 
 
 if __name__ == '__main__':
-    EMDD_musk1(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=20)
+    EMDD_musk1(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=30)

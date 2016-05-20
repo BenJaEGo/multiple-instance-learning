@@ -67,10 +67,10 @@ class MaxDiverseDensity(object):
             if bag['label'] == 1:
                 n_pos_bag += 1
                 max_iter += bag['instances'].shape[0]
-        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
 
         epochs = min(max_iter, epochs)
         print('total epochs number is %d' % epochs)
+        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
 
         targets = list()
         scales = list()
@@ -250,11 +250,14 @@ def toy_example():
 
 
 def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10):
+
     start_time = time.clock()
     dd_classifier = MaxDiverseDensity()
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
     if split_ratio is None and cv_fold is None:
+        print('parameters setting: aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d' %
+              (aggregate, threshold, scale_indicator, epochs))
         targets, scales, func_values = dd_classifier.train(bags, scale_indicator, epochs)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
                                                                                                func_values, bags,
@@ -270,6 +273,8 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
         return data, train_result, predict_result
 
     elif split_ratio:
+        print('parameters setting: split ratio = %f, aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d'
+              % (split_ratio, aggregate, threshold, scale_indicator, epochs))
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
@@ -289,9 +294,11 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
         print('time elapsed in maxDD is %f seconds' % (end_time - start_time))
         return data, train_result, predict_result
     elif cv_fold:
+        print('parameters setting: cv fold = %f, aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d'
+              % (cv_fold, aggregate, threshold, scale_indicator, epochs))
         accuracy_list = list()
         n_bags = len(bags)
-        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
+        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=False, random_state=0)
         cf = 1
         for train_idx, test_idx in kf:
             train_bag = list()
@@ -328,4 +335,4 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
 
 if __name__ == '__main__':
     # toy_example()
-    maxDD_musk1(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=20)
+    maxDD_musk1(split_ratio=0.2, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=10)
