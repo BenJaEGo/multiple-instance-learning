@@ -3,15 +3,12 @@ from scipy import optimize
 import random
 from sklearn import cross_validation
 import time
-import copy
-import os
 
 from data_utils import load_musk1_data
 
 
 _floatX = np.float32
 _intX = np.int8
-
 
 class EMDiverseDensity(object):
     """
@@ -22,19 +19,13 @@ class EMDiverseDensity(object):
         key: prob, value: a scalar indicating this bag's probability
         key: instances, value: a numpy array indicating instances in this bag, each row is a instance, each column is a
         feature
-        this version select given number of different positive instances in different bags as starting points for em
-        in predict process, simply use 'min', 'max' or 'avg' mode to select a concept from these learned concepts using
-        the negative log likelihood, then use the concept for testing data.
+        this version select given number of positive bags and take all positive instances insider these positive bags as
+        starting points, in predict process, from all learned concepts, using training data to select the concept
+         minimise classify error, then use this selected concept to predict test data.
     """
 
     def __init__(self):
         pass
-
-    def data_preprocess(self, bags):
-        for bag in bags:
-            # preprocess for musk data on dd method according to paper
-            bag['instances'] /= 100
-        return bags
 
     def diverse_density_nll(self, params, instances, labels):
         [n_instances, n_dim] = instances.shape
@@ -111,16 +102,17 @@ class EMDiverseDensity(object):
                 r_params = optimize.minimize(self.diverse_density_nll, init_params,
                                              args=(selected_instances, selected_labels,), method='L-BFGS-B')
                 target = r_params.x
-                scale = np.ones(n_dim,)
+                scale = np.ones(n_dim, )
 
             final_func_val = r_params.fun
             func_val_diff = prev_func_val - final_func_val
             prev_func_val = final_func_val
+
         print('em loop number is %d. ' % debug_count, end='')
 
         return target, scale, final_func_val, init_func_val
 
-    def train(self, bags, scale_indicator, epochs):
+    def train(self, bags, scale_indicator, epochs, threshold):
         n_bag = len(bags)
         n_pos_bag = 0
 
@@ -138,28 +130,30 @@ class EMDiverseDensity(object):
         scales = list()
         func_values = list()
 
+        selected_instances = list()
+
         for epoch_idx in range(epochs):
             # randomly select a positive bag
             bag_idx = random.randint(0, n_bag - 1)
-            while bags[bag_idx]['label'] == 0 or np.all(np.asarray(bags[bag_idx]['starting_point']) == 1):
+            while bags[bag_idx]['selected'] == 1:
                 bag_idx = random.randint(0, n_bag - 1)
-            # randomly select a positive instance that not used before
-            [_, n_dim] = bags[bag_idx]['instances'].shape
-            starting_point_bag = np.asarray(bags[bag_idx]['starting_point'])
-            valuable_idx = np.asarray(np.nonzero(starting_point_bag == 0))
-            if valuable_idx.shape[1] == 1:
-                instance_idx = valuable_idx[0, 0]
-            else:
-                rand_idx = random.randint(0, valuable_idx.shape[1] - 1)
-                instance_idx = valuable_idx[0, rand_idx]
-            bags[bag_idx]['starting_point'][instance_idx] = 1
+            bags[bag_idx]['selected'] = 1
+            selected_instances.extend(bags[bag_idx]['instances'])
+            # print(bags[bag_idx]['instances'].shape)
 
+        selected_instances = np.asarray(selected_instances, dtype=_floatX)
+        # print(selected_instances.shape)
+
+        [n_instances, n_dim] = selected_instances.shape
+
+        print('total selected instances number is %d.' % n_instances)
+
+        for instance_idx in range(n_instances):
             # scale is initialized to one
-            print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. ' %
-                  (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx), end='')
+            print('instance index %d, ' % instance_idx, end='')
             [target, scale, func_val, init_func_val] = self.em(bags,
                                                                scale_indicator,
-                                                               bags[bag_idx]['instances'][instance_idx, :],
+                                                               selected_instances[instance_idx, :],
                                                                np.ones(n_dim, ))
             print('nll before optimization is %f, nll after optimization is %f' % (init_func_val, func_val))
 
@@ -167,9 +161,38 @@ class EMDiverseDensity(object):
             scales.append(scale)
             func_values.append(func_val)
 
-        return targets, scales, func_values
+        targets = np.asarray(targets)
+        scales = np.asarray(scales)
 
-    def predict(self, targets, scales, func_values, bags, aggregate, threshold):
+        [n_targets, _] = targets.shape
+        n_acc = -np.inf
+        best_idx = -1
+        for target_idx in range(n_targets):
+            target = targets[target_idx, :]
+            scale = scales[target_idx, :]
+            current_acc = 0
+            for bag_idx in range(n_bag):
+                instances = np.asarray(bags[bag_idx]['instances'])
+                dist = np.mean(((instances - target) ** 2) * (scale ** 2), axis=1)
+                inst_prob = np.exp(-dist)
+                inst_label = np.int8(inst_prob > threshold)
+                bag_label = np.any(inst_label)
+                if bag_label == bags[bag_idx]['label']:
+                    current_acc += 1
+
+            if current_acc > n_acc:
+                best_idx = target_idx
+                n_acc = current_acc
+
+        # print(best_idx)
+        # print(np.argmin(func_values))
+
+        target = targets[best_idx, :]
+        scale = scales[best_idx, :]
+
+        return target, scale
+
+    def predict(self, target, scale, bags, threshold):
 
         n_bag = len(bags)
 
@@ -178,28 +201,8 @@ class EMDiverseDensity(object):
         instances_prob = list()
         instances_label = list()
 
-        func_values = np.asarray(func_values)
-        targets = np.asarray(targets)
-        scales = np.asarray(scales)
-        # with maximal negative log likelihood
-        if aggregate == 'max':
-            target_idx = np.argmax(func_values)
-            target = targets[target_idx]
-            scale = scales[target_idx]
-        # with minimal negative log likelihood
-        elif aggregate == 'min':
-            target_idx = np.argmin(func_values)
-            target = targets[target_idx]
-            scale = scales[target_idx]
-        # with average negative log likelihood
-        elif aggregate == 'avg':
-            target = np.mean(targets, axis=0)
-            scale = np.mean(scales, axis=0)
-        else:
-            raise NotImplementedError('must be max, min or avg')
-
         for bag_idx in range(n_bag):
-            instances = bags[bag_idx]['instances']
+            instances = np.asarray(bags[bag_idx]['instances'])
             dist = np.mean(((instances - target) ** 2) * (scale ** 2), axis=1)
             inst_prob = np.exp(-dist)
             inst_label = np.int8(inst_prob > threshold)
@@ -211,55 +214,54 @@ class EMDiverseDensity(object):
         return bags_label, bags_prob, instances_label, instances_prob
 
 
-def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10):
+def EMDD_musk1(split_ratio=None, cv_fold=None, threshold=0.5, scale_indicator=1, epochs=10):
     start_time = time.clock()
     dd_classifier = EMDiverseDensity()
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
-    bags = dd_classifier.data_preprocess(bags)
     if split_ratio is None and cv_fold is None:
-        print('parameters setting: split_ratio = None, cv_fold = None, aggregate = %s, threshold = %f, '
-              'scale_indicator = %d, epochs = %d' % (aggregate, threshold, scale_indicator, epochs))
-        targets, scales, func_values = dd_classifier.train(bags, scale_indicator, epochs)
+        print('parameters setting: split_ratio = None, cv_fold = None, threshold = %f, '
+              'scale_indicator = %d, epochs = %d' % (threshold, scale_indicator, epochs))
+        targets, scales = dd_classifier.train(bags, scale_indicator, epochs, threshold)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                               func_values, bags,
-                                                                                               aggregate, threshold)
+                                                                                               bags,
+                                                                                               threshold)
         accuracy = sum(bag_labels == p_bags_label) / len(bags)
         print('training accuracy is: %f' % accuracy)
 
-        train_result = (targets, scales, func_values)
+        train_result = (targets, scales)
         predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
         data = (bags, bag_labels)
         end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
+        print('time elapsed in EMDD is %f seconds' % (end_time - start_time))
         return data, train_result, predict_result
 
     elif split_ratio:
-        print('parameters setting: split ratio = %f, cv_fold = None, aggregate = %s, '
+        print('parameters setting: split ratio = %f, cv_fold = None, '
               'threshold = %f, scale_indicator = %d, epochs = %d' %
-              (split_ratio, aggregate, threshold, scale_indicator, epochs))
+              (split_ratio, threshold, scale_indicator, epochs))
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
                                                                                          random_state=0)
 
-        targets, scales, func_values = dd_classifier.train(train_bag, scale_indicator, epochs)
+        targets, scales = dd_classifier.train(train_bag, scale_indicator, epochs, threshold)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                               func_values, test_bag,
-                                                                                               aggregate, threshold)
+                                                                                               test_bag,
+                                                                                               threshold)
         accuracy = sum(test_label == p_bags_label) / len(test_bag)
         print('split ratio is %f, testing accuracy is %f' % (split_ratio, accuracy))
 
-        train_result = (targets, scales, func_values)
+        train_result = (targets, scales)
         predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
         data = (bags, bag_labels)
         end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
+        print('time elapsed in EMDD is %f seconds' % (end_time - start_time))
         return data, train_result, predict_result
     elif cv_fold:
-        print('parameters setting: split_ratio = None, cv_fold = %d, aggregate = %s, '
+        print('parameters setting: split_ratio = None, cv_fold = %d, '
               'threshold = %f, scale_indicator = %d, epochs = %d'
-              % (cv_fold, aggregate, threshold, scale_indicator, epochs))
+              % (cv_fold, threshold, scale_indicator, epochs))
         accuracy_list = list()
         n_bags = len(bags)
         kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
@@ -268,19 +270,17 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
             train_bag = list()
             train_label = list()
             for idx in train_idx:
-                train_bag.append(copy.deepcopy(bags[idx]))
+                train_bag.append(bags[idx])
                 train_label.append(bag_labels[idx])
             test_bag = list()
             test_label = list()
             for idx in test_idx:
-                test_bag.append(copy.deepcopy(bags[idx]))
+                test_bag.append(bags[idx])
                 test_label.append(bag_labels[idx])
 
-            targets, scales, func_values = dd_classifier.train(train_bag, scale_indicator, epochs)
+            targets, scales = dd_classifier.train(train_bag, scale_indicator, epochs, threshold)
             p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                                   func_values,
                                                                                                    test_bag,
-                                                                                                   aggregate,
                                                                                                    threshold)
             accuracy = sum(test_label == p_bags_label) / len(test_bag)
             accuracy_list.append(accuracy)
@@ -290,16 +290,11 @@ def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, s
         mean_accuracy = float(np.mean(np.asarray(accuracy_list)))
         print('mean accuracy with %d-fold cross validation is %f' % (cv_fold, mean_accuracy))
         end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
+        print('time elapsed in EMDD is %f seconds' % (end_time - start_time))
 
         return accuracy_list
     else:
         pass
 
-
 if __name__ == '__main__':
-<<<<<<< HEAD:EMDD_inst.py
-    EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=15)
-=======
-    EMDD_musk1(split_ratio=None, cv_fold=10, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=3)
->>>>>>> origin/master:EMDD.py
+    EMDD_musk1(split_ratio=None, cv_fold=10, threshold=0.5, scale_indicator=1, epochs=3)
