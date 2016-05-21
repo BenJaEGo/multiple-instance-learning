@@ -19,7 +19,7 @@ class MaxDiverseDensity(object):
     key: inst_prob, value: a vector indicating each instance's probability
     key: label, value: a scalar indicating this bag's label
     key: prob, value: a scalar indicating this bag's probability
-    key: instances, value: a numpy array indicating instances in this bag, each row is a instance, each colum is a
+    key: instances, value: a numpy array indicating instances in this bag, each row is a instance, each column is a
     feature
     """
 
@@ -256,8 +256,8 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
     file_path = 'musk1.txt'
     bags, bag_labels = load_musk1_data(file_path)
     if split_ratio is None and cv_fold is None:
-        print('parameters setting: aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d' %
-              (aggregate, threshold, scale_indicator, epochs))
+        print('parameters setting: split_ratio = None, cv_fold = None, aggregate = %s, threshold = %f, '
+              'scale_indicator = %d, epochs = %d' % (aggregate, threshold, scale_indicator, epochs))
         targets, scales, func_values = dd_classifier.train(bags, scale_indicator, epochs)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
                                                                                                func_values, bags,
@@ -273,8 +273,9 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
         return data, train_result, predict_result
 
     elif split_ratio:
-        print('parameters setting: split ratio = %f, aggregate = %s, threshold = %f, scale_indicator = %d, epochs = %d'
-              % (split_ratio, aggregate, threshold, scale_indicator, epochs))
+        print('parameters setting: split ratio = %f, cv_fold = None, aggregate = %s, '
+              'threshold = %f, scale_indicator = %d, epochs = %d' %
+              (split_ratio, aggregate, threshold, scale_indicator, epochs))
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
@@ -335,4 +336,4 @@ def maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, 
 
 if __name__ == '__main__':
     # toy_example()
-    maxDD_musk1(split_ratio=0.2, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=10)
+    maxDD_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=10)

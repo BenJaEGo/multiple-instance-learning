@@ -93,6 +93,7 @@ def load_musk1_data(file_path):
         bag['instances'] /= 100
         bag['label'] = max(bag['label'])
         bag['prob'] = 0
+        bag['selected'] = 0
         bag['inst_prob'] = np.zeros([n_instances, ])
         bag['starting_point'] = np.zeros([n_instances, ])
         bag_labels.append(bag['label'])
