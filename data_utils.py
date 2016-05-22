@@ -4,16 +4,12 @@ import numpy as np
 import scipy.io as spio
 import gzip
 import pickle
-from sklearn import cross_validation
-from sklearn import preprocessing
-
 
 _floatX = np.float32
 _intX = np.int8
 
 
-
-def load_feature_from_txt(file_path, cv_ratio=None):
+def load_feature_from_txt(file_path):
 
     feature = list()
     label = list()
@@ -27,22 +23,7 @@ def load_feature_from_txt(file_path, cv_ratio=None):
     feature = np.asarray(feature)
     label = np.asarray(label, dtype=_intX)
 
-    # print(feature.shape)
-    # print(feature.dtype)
-    # print(label.shape)
-    # print(label.dtype)
-
-    if cv_ratio is None:
-        print('feature size is: ', feature.shape)
-        print('label size is: ', label.shape)
-        return feature, label
-    else:
-        x_train, x_test, y_train, y_test = cross_validation.train_test_split(feature, label,
-                                                                             test_size=cv_ratio,
-                                                                             random_state=0)
-        print('training set size is: ', x_train.shape[0])
-        print('testing set size is: ', x_test.shape[0])
-        return x_train, y_train, x_test, y_test
+    return feature, label
 
 
 def load_musk1_data(file_path):
@@ -128,7 +109,10 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
     feature = list()
     mat_data = load_mat_data(data_dir, target, data_type)
     for segment in mat_data:
-        feature.append(preprocess(segment))
+        if preprocess:
+            feature.append(preprocess(segment))
+        else:
+            raise NotImplementedError('save raw data to pickle files is useless.')
 
     feature = np.asarray(feature).squeeze()
 
@@ -149,7 +133,7 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
             pickle.dump(label, f)
 
 
-def load_kaggle_data_into_instance(target, cv_ratio=None):
+def load_kaggle_data_into_instance(target):
     data_type = 'preictal'
     filename = '%s_%s_feature.pkl.gz' % (target, data_type)
     with gzip.open(filename, 'r') as f:
@@ -159,8 +143,8 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
     with gzip.open(filename, 'r') as f:
         preictal_label = pickle.load(f)
 
-    preictal_feature = preictal_feature[0:24, :, :]
-    preictal_label = preictal_label[0:24, :]
+    # preictal_feature = preictal_feature[0:24, :, :]
+    # preictal_label = preictal_label[0:24, :]
 
     d0, d1, d2 = preictal_feature.shape
     print('preictal feature shape: ', preictal_feature.shape)
@@ -177,8 +161,8 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
     with gzip.open(filename, 'r') as f:
         interictal_label = pickle.load(f)
 
-    interictal_feature = interictal_feature[0:24, :, :]
-    interictal_label = interictal_label[0:24, :]
+    # interictal_feature = interictal_feature[0:24, :, :]
+    # interictal_label = interictal_label[0:24, :]
 
     d0, d1, d2 = interictal_feature.shape
     print('interictal feature shape: ', interictal_feature.shape)
@@ -186,33 +170,82 @@ def load_kaggle_data_into_instance(target, cv_ratio=None):
     interictal_feature = interictal_feature.reshape(d0 * d1, d2)
     interictal_label = interictal_label.reshape(d0 * d1, 1)
 
-
-
     feature = np.vstack((interictal_feature, preictal_feature)).squeeze()
     label = np.vstack((interictal_label, preictal_label)).squeeze()
 
-    # print(feature.shape)
-    # print(np.max(feature))
-    # print(np.min(feature))
-    # print(feature[0, :])
-    # feature = preprocessing.normalize(feature, norm='l2', axis=0)
-    # print(feature.shape)
-    # print(np.max(feature))
-    # print(np.min(feature))
-    # feature = preprocessing.scale(feature, axis=1)
-    # print(feature[:, 0])
-    feature = preprocessing.minmax_scale(feature, feature_range=(0, 1), axis=0)
-    # print(feature[:, 0])
+    print('return feature shape', feature.shape)
+    print('return label shape', label.shape)
 
-    if cv_ratio is None:
-        print('feature size is: ', feature.shape)
-        print('label size is: ', label.shape)
-        return feature, label
-    else:
-        x_train, x_test, y_train, y_test = cross_validation.train_test_split(feature, label,
-                                                                             test_size=cv_ratio,
-                                                                             random_state=0)
-        print('training set size is: ', x_train.shape[0])
-        print('testing set size is: ', x_test.shape[0])
-        return x_train, x_test, y_train, y_test
+    return feature, label
+
+
+def load_kaggle_data_into_bag(target):
+    data_type = 'preictal'
+    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
+    with gzip.open(filename, 'r') as f:
+        preictal_feature = pickle.load(f)
+
+    filename = '%s_%s_label.pkl.gz' % (target, data_type)
+    with gzip.open(filename, 'r') as f:
+        preictal_label = pickle.load(f)
+
+    data_type = 'interictal'
+    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
+    with gzip.open(filename, 'r') as f:
+        interictal_feature = pickle.load(f)
+
+    filename = '%s_%s_label.pkl.gz' % (target, data_type)
+    with gzip.open(filename, 'r') as f:
+        interictal_label = pickle.load(f)
+
+    print('preictal feature shape: ', preictal_feature.shape)
+    print('preictal label shape: ', preictal_label.shape)
+    print('interictal feature shape: ', interictal_feature.shape)
+    print('interictal label shape: ', interictal_label.shape)
+
+    bags = list()
+    bag_labels = list()
+
+    n_bag, n_instance_each_bag, n_feature = preictal_feature.shape
+
+    # n_bag = 6
+
+    for bag_idx in range(n_bag):
+        bag = dict()
+        bag['instances'] = preictal_feature[bag_idx]
+        bag['label'] = int(np.max(preictal_label[bag_idx]))
+        bag['prob'] = 0
+        bag['selected'] = 0
+        bag['inst_prob'] = np.zeros([n_instance_each_bag, ])
+        bag['starting_point'] = np.zeros([n_instance_each_bag, ])
+
+        bags.append(bag)
+        bag_labels.append(bag['label'])
+
+    n_bag, n_instance_each_bag, n_feature = interictal_feature.shape
+
+    # n_bag = 6
+
+    for bag_idx in range(n_bag):
+        bag = dict()
+        bag['instances'] = interictal_feature[bag_idx]
+        bag['label'] = int(np.max(interictal_label[bag_idx]))
+        bag['prob'] = 0
+        bag['selected'] = 0
+        bag['inst_prob'] = np.zeros([n_instance_each_bag, ])
+        bag['starting_point'] = np.zeros([n_instance_each_bag, ])
+
+        bags.append(bag)
+        bag_labels.append(bag['label'])
+
+    print('bag number in data set is: %d' % len(bags))
+
+    return bags, bag_labels
+
+
+
+
+
+
+
 

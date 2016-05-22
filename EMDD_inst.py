@@ -1,12 +1,6 @@
 import numpy as np
 from scipy import optimize
 import random
-from sklearn import cross_validation
-import time
-import copy
-import os
-
-from data_utils import load_musk1_data
 
 
 _floatX = np.float32
@@ -29,12 +23,6 @@ class EMDiverseDensity(object):
 
     def __init__(self):
         pass
-
-    def data_preprocess(self, bags):
-        for bag in bags:
-            # preprocess for musk data on dd method according to paper
-            bag['instances'] /= 100
-        return bags
 
     def diverse_density_nll(self, params, instances, labels):
         [n_instances, n_dim] = instances.shape
@@ -132,7 +120,8 @@ class EMDiverseDensity(object):
 
         epochs = min(max_iter, epochs)
         print('total epochs number is %d' % epochs)
-        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
+        print('total number of training bags is %d. number of positive bags is %d, number of positive instances is: %d'
+              % (len(bags), n_pos_bag, max_iter))
 
         targets = list()
         scales = list()
@@ -211,95 +200,3 @@ class EMDiverseDensity(object):
         return bags_label, bags_prob, instances_label, instances_prob
 
 
-def EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10):
-    start_time = time.clock()
-    dd_classifier = EMDiverseDensity()
-    file_path = 'musk1.txt'
-    bags, bag_labels = load_musk1_data(file_path)
-    bags = dd_classifier.data_preprocess(bags)
-    if split_ratio is None and cv_fold is None:
-        print('parameters setting: split_ratio = None, cv_fold = None, aggregate = %s, threshold = %f, '
-              'scale_indicator = %d, epochs = %d' % (aggregate, threshold, scale_indicator, epochs))
-        targets, scales, func_values = dd_classifier.train(bags, scale_indicator, epochs)
-        p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                               func_values, bags,
-                                                                                               aggregate, threshold)
-        accuracy = sum(bag_labels == p_bags_label) / len(bags)
-        print('training accuracy is: %f' % accuracy)
-
-        train_result = (targets, scales, func_values)
-        predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
-        data = (bags, bag_labels)
-        end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
-        return data, train_result, predict_result
-
-    elif split_ratio:
-        print('parameters setting: split ratio = %f, cv_fold = None, aggregate = %s, '
-              'threshold = %f, scale_indicator = %d, epochs = %d' %
-              (split_ratio, aggregate, threshold, scale_indicator, epochs))
-        train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
-                                                                                         bag_labels,
-                                                                                         test_size=split_ratio,
-                                                                                         random_state=0)
-
-        targets, scales, func_values = dd_classifier.train(train_bag, scale_indicator, epochs)
-        p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                               func_values, test_bag,
-                                                                                               aggregate, threshold)
-        accuracy = sum(test_label == p_bags_label) / len(test_bag)
-        print('split ratio is %f, testing accuracy is %f' % (split_ratio, accuracy))
-
-        train_result = (targets, scales, func_values)
-        predict_result = (p_bags_label, p_bags_prob, p_instances_label, p_instances_prob)
-        data = (bags, bag_labels)
-        end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
-        return data, train_result, predict_result
-    elif cv_fold:
-        print('parameters setting: split_ratio = None, cv_fold = %d, aggregate = %s, '
-              'threshold = %f, scale_indicator = %d, epochs = %d'
-              % (cv_fold, aggregate, threshold, scale_indicator, epochs))
-        accuracy_list = list()
-        n_bags = len(bags)
-        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
-        cf = 1
-        for train_idx, test_idx in kf:
-            train_bag = list()
-            train_label = list()
-            for idx in train_idx:
-                train_bag.append(copy.deepcopy(bags[idx]))
-                train_label.append(bag_labels[idx])
-            test_bag = list()
-            test_label = list()
-            for idx in test_idx:
-                test_bag.append(copy.deepcopy(bags[idx]))
-                test_label.append(bag_labels[idx])
-
-            targets, scales, func_values = dd_classifier.train(train_bag, scale_indicator, epochs)
-            p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
-                                                                                                   func_values,
-                                                                                                   test_bag,
-                                                                                                   aggregate,
-                                                                                                   threshold)
-            accuracy = sum(test_label == p_bags_label) / len(test_bag)
-            accuracy_list.append(accuracy)
-            print('completed fold %d, accuracy is %f' % (cf, accuracy))
-            cf += 1
-
-        mean_accuracy = float(np.mean(np.asarray(accuracy_list)))
-        print('mean accuracy with %d-fold cross validation is %f' % (cv_fold, mean_accuracy))
-        end_time = time.clock()
-        print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
-
-        return accuracy_list
-    else:
-        pass
-
-
-if __name__ == '__main__':
-<<<<<<< HEAD:EMDD_inst.py
-    EMDD_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=15)
-=======
-    EMDD_musk1(split_ratio=None, cv_fold=10, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=3)
->>>>>>> origin/master:EMDD.py
