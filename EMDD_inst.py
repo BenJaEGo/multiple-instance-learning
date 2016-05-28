@@ -48,7 +48,7 @@ class EMDiverseDensity(object):
                 fun -= np.log(1 - inst_prob[inst_idx])
         return fun
 
-    def em(self, bags, scale_indicator, init_target, init_scale, func_val_tol=1e-5):
+    def em(self, bags, scale_indicator, init_target, init_scale, func_val_tol=1e-3):
         target = init_target
         scale = init_scale
 
@@ -64,7 +64,7 @@ class EMDiverseDensity(object):
         while func_val_diff > func_val_tol:
 
             debug_count += 1
-            if debug_count > 100:
+            if debug_count > 1000:
                 print(prev_func_val, final_func_val, func_val_diff, func_val_tol)
                 raise NotImplementedError('loop error, em loop number is %d.' % debug_count)
 

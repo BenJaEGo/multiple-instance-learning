@@ -1,12 +1,15 @@
-from sklearn import cross_validation
 import time
+from sklearn import cross_validation
+from sklearn import preprocessing
 import copy
 import os
 import numpy as np
-from sklearn import preprocessing
+import random
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
+from scipy import interp
 
 from data_utils import load_musk1_data
-from vis_utils import plot_roc
 
 
 def data_preprocess_musk_dd(bags):
@@ -307,41 +310,86 @@ def maxDD_on_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.
 
 
 def miSVM_on_musk1(split_ratio=None, cv_fold=None):
-    from miSVM import MiSVM
+    from MISVM_bag import MiSVM
 
     start_time = time.clock()
     classifier = MiSVM()
-    file_path = 'musk1.txt'
+    file_path = 'musk2.txt'
     bags, bag_labels = load_musk1_data(file_path)
     bags, bag_labels = data_preprocess_musk_svm(bags)
     if split_ratio is None and cv_fold is None:
-        model = classifier.train(bags)
+        model, train_bag = classifier.train(bags)
+
+        classifier.check_solution(train_bag)
+        params = model.get_params()
+        param_c = params['C']
+        param_gamma = params['gamma']
+
         p_bags_label, p_bags_prob = classifier.predict(bags, model)
-        print(p_bags_prob)
+        print('test label: ', bag_labels)
+        print('predict label: ', p_bags_prob)
         accuracy = sum(bag_labels == p_bags_label) / len(bags)
         print('training accuracy is: %f' % accuracy)
         end_time = time.clock()
         print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
 
+        fpr, tpr, _ = roc_curve(bag_labels, p_bags_prob)
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, 'k--', label='ROC training (area = %0.2f)' % roc_auc)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('MISVM_bag, C = %.2f, gamma = %.2f, acc = %.3f' % (param_c, param_gamma, accuracy))
+        plt.legend(loc="lower right")
+        plt.show()
+
+        return p_bags_prob, bag_labels
+
     elif split_ratio:
+        random_seed = random.randint(1, 1000)
+        # random_seed = 712
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
-                                                                                         random_state=0)
+                                                                                         random_state=random_seed)
+        print('positive bags number is %d' % np.sum(np.asarray(test_label) == 1))
         model, train_bag = classifier.train(train_bag)
+        classifier.check_solution(train_bag)
+        print(model.get_params())
         p_bags_label, p_bags_prob = classifier.predict(test_bag, model)
         accuracy = sum(test_label == p_bags_label) / len(test_bag)
         print('split ratio is %f, testing accuracy is %f' % (split_ratio, accuracy))
         end_time = time.clock()
         print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
 
-        return p_bags_prob, test_label
+        if np.any(np.asarray(test_label) == 1) and np.any(np.asarray(test_label) == -1):
+            fpr, tpr, _ = roc_curve(test_label, p_bags_prob)
+            roc_auc = auc(fpr, tpr)
+            plt.plot(fpr, tpr, 'k--', label='ROC (area = %0.2f)' % roc_auc)
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title('MISVM_INST split ratio %.2f acc %f ' % (split_ratio, accuracy))
+            plt.legend(loc="lower right")
+            plt.show()
 
     elif cv_fold:
         accuracy_list = list()
         n_bags = len(bags)
-        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=0)
+        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=100)
         cf = 1
+        p_values = list()
+        test_labels = list()
+
+        mean_tpr = 0.0
+        mean_fpr = np.linspace(0, 1, 100)
+        n_roc = 0
+
+        param_c = 0
+        param_gamma = 0
+
         for train_idx, test_idx in kf:
             train_bag = list()
             train_label = list()
@@ -355,31 +403,61 @@ def miSVM_on_musk1(split_ratio=None, cv_fold=None):
                 test_label.append(bag_labels[idx])
 
             model, train_bag = classifier.train(train_bag)
+            classifier.check_solution(train_bag)
+            # print(model.get_params())
+            params = model.get_params()
+            param_c = params['C']
+            param_gamma = params['gamma']
             p_bags_label, p_bags_prob = classifier.predict(test_bag, model)
             accuracy = sum(test_label == p_bags_label) / len(test_bag)
             accuracy_list.append(accuracy)
             print('completed fold %d, accuracy is %f' % (cf, accuracy))
+
+            if np.any(np.asarray(test_label) == 1) and np.any(np.asarray(test_label) == -1):
+                fpr, tpr, thresholds = roc_curve(test_label, p_bags_prob)
+                mean_tpr += interp(mean_fpr, fpr, tpr)
+                mean_tpr[0] = 0.0
+                roc_auc = auc(fpr, tpr)
+                plt.plot(fpr, tpr, lw=1, label='fold %d (area = %0.2f)' % (cf, roc_auc))
+                n_roc += 1
+            else:
+                pass
+
             cf += 1
+            p_values.append(p_bags_prob)
+            test_labels.append(test_label)
+
+        plt.plot([0, 1], [0, 1], '--', color=(0.6, 0.6, 0.6), label='Luck')
+        mean_tpr /= n_roc
+        mean_tpr[-1] = 1.0
+        mean_auc = auc(mean_fpr, mean_tpr)
+        plt.plot(mean_fpr, mean_tpr, 'k--', label='Mean ROC (area = %0.2f)' % mean_auc, lw=2)
 
         mean_accuracy = float(np.mean(np.asarray(accuracy_list)))
         print('mean accuracy with %d-fold cross validation is %f' % (cv_fold, mean_accuracy))
         end_time = time.clock()
         print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
 
-        return accuracy_list
+        plt.xlim([-0.05, 1.05])
+        plt.ylim([-0.05, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('MISVM_inst, C = %.2f, gamma = %.2f, acc = %.3f' % (param_c, param_gamma, mean_accuracy))
+        plt.legend(loc="lower right")
+        plt.show()
+
+        return p_values, test_labels
     else:
         pass
-
-
 
 if __name__ == '__main__':
     # EMDD_inst_on_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=5)
     # EMDD_bag_on_musk1(split_ratio=None, cv_fold=None, threshold=0.5, scale_indicator=1, epochs=5)
     # maxDD_on_musk1(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=5)
-    p_bags_prob, test_label = miSVM_on_musk1(split_ratio=0.2, cv_fold=None)
-    print(p_bags_prob)
-    print(test_label)
-    plot_roc(test_label, p_bags_prob)
-    # miSVM_on_musk1(split_ratio=None, cv_fold=10)
+    # miSVM_on_musk1()
+    # miSVM_on_musk1(split_ratio=0.2)
+    # miSVM_on_musk1(cv_fold=10)
+    miSVM_on_musk1()
+
 
 
