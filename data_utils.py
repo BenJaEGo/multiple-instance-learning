@@ -115,60 +115,112 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
             raise NotImplementedError('save raw data to pickle files is useless.')
 
     feature = np.asarray(feature).squeeze()
+    print(feature.shape)
+    # chunk_size = 1024
 
-    pkl_filename = '%s_%s_feature.pkl.gz' % (target, data_type)
-    with gzip.open(pkl_filename, 'wb') as f:
-        pickle.dump(feature, f)
+    [n_bag, n_instances, n_feaure] = feature.shape
 
-    if data_type == 'preictal':
-        label = np.ones(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
-    elif data_type == 'interictal':
-        label = np.zeros(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
-    else:
-        label = None
+    slice_idx = 0
 
-    if label is not None:
-        pkl_filename = '%s_%s_label.pkl.gz' % (target, data_type)
+    for idx in range(0, n_bag):
+        pkl_filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
         with gzip.open(pkl_filename, 'wb') as f:
-            pickle.dump(label, f)
+            pickle.dump(feature[idx], f, protocol=4)
+
+        if data_type == 'preictal':
+            label = np.ones(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
+        elif data_type == 'interictal':
+            label = np.zeros(shape=[feature.shape[0], feature.shape[1]], dtype=_intX)
+        else:
+            label = None
+
+        if label is not None:
+            pkl_filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+            with gzip.open(pkl_filename, 'wb') as f:
+                pickle.dump(label[idx], f, protocol=4)
+
+        slice_idx += 1
 
 
 def load_kaggle_data_into_instance(target):
+
     data_type = 'preictal'
-    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        preictal_feature = pickle.load(f)
 
-    filename = '%s_%s_label.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        preictal_label = pickle.load(f)
+    preictal_feature = list()
+    preictal_label = list()
 
-    # preictal_feature = preictal_feature[0:24, :, :]
-    # preictal_label = preictal_label[0:24, :]
+    slice_idx = 0
+    done = False
+    while not done:
+        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                preictal_feature.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
 
-    d0, d1, d2 = preictal_feature.shape
-    print('preictal feature shape: ', preictal_feature.shape)
-    print('preictal label shape: ', preictal_label.shape)
-    preictal_feature = preictal_feature.reshape(d0 * d1, d2)
-    preictal_label = preictal_label.reshape(d0 * d1, 1)
+    slice_idx = 0
+    done = False
+    while not done:
+        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                preictal_label.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
+
+    preictal_feature = np.asarray(preictal_feature)
+    preictal_label = np.asarray(preictal_label)
 
     data_type = 'interictal'
-    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        interictal_feature = pickle.load(f)
+    interictal_feature = list()
+    interictal_label = list()
 
-    filename = '%s_%s_label.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        interictal_label = pickle.load(f)
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                interictal_feature.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
 
-    # interictal_feature = interictal_feature[0:24, :, :]
-    # interictal_label = interictal_label[0:24, :]
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                interictal_label.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
 
-    d0, d1, d2 = interictal_feature.shape
+    preictal_feature = np.asarray(preictal_feature)
+    preictal_label = np.asarray(preictal_label)
+    interictal_feature = np.asarray(interictal_feature)
+    interictal_label = np.asarray(interictal_label)
+
+    print('preictal feature shape: ', preictal_feature.shape)
+    print('preictal label shape: ', preictal_label.shape)
     print('interictal feature shape: ', interictal_feature.shape)
     print('interictal label shape: ', interictal_label.shape)
-    interictal_feature = interictal_feature.reshape(d0 * d1, d2)
-    interictal_label = interictal_label.reshape(d0 * d1, 1)
 
     feature = np.vstack((interictal_feature, preictal_feature)).squeeze()
     label = np.vstack((interictal_label, preictal_label)).squeeze()
@@ -180,23 +232,78 @@ def load_kaggle_data_into_instance(target):
 
 
 def load_kaggle_data_into_bag(target):
-    data_type = 'preictal'
-    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        preictal_feature = pickle.load(f)
 
-    filename = '%s_%s_label.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        preictal_label = pickle.load(f)
+    data_type = 'preictal'
+    preictal_feature = list()
+    preictal_label = list()
+
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                preictal_feature.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
+
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                preictal_label.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
+
+    preictal_feature = np.asarray(preictal_feature)
+    preictal_label = np.asarray(preictal_label)
 
     data_type = 'interictal'
-    filename = '%s_%s_feature.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        interictal_feature = pickle.load(f)
+    interictal_feature = list()
+    interictal_label = list()
 
-    filename = '%s_%s_label.pkl.gz' % (target, data_type)
-    with gzip.open(filename, 'r') as f:
-        interictal_label = pickle.load(f)
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                interictal_feature.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
+
+    done = False
+    slice_idx = 0
+    while not done:
+        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        if os.path.exists(filename):
+            with gzip.open(filename, 'r') as f:
+                feature_slice = pickle.load(f)
+                interictal_label.append(feature_slice)
+        else:
+            if 0 == slice_idx:
+                raise Exception("file %s not found" % filename)
+            done = True
+        slice_idx += 1
+
+    preictal_feature = np.asarray(preictal_feature)
+    preictal_label = np.asarray(preictal_label)
+    interictal_feature = np.asarray(interictal_feature)
+    interictal_label = np.asarray(interictal_label)
 
     print('preictal feature shape: ', preictal_feature.shape)
     print('preictal label shape: ', preictal_label.shape)
@@ -207,8 +314,6 @@ def load_kaggle_data_into_bag(target):
     bag_labels = list()
 
     n_bag, n_instance_each_bag, n_feature = preictal_feature.shape
-
-    # n_bag = 6
 
     for bag_idx in range(n_bag):
         bag = dict()
@@ -223,8 +328,6 @@ def load_kaggle_data_into_bag(target):
         bag_labels.append(bag['label'])
 
     n_bag, n_instance_each_bag, n_feature = interictal_feature.shape
-
-    # n_bag = 6
 
     for bag_idx in range(n_bag):
         bag = dict()

@@ -543,8 +543,8 @@ def miSVM_bag_on_kaggle(split_ratio=None, cv_fold=None):
 
     start_time = time.clock()
     classifier = MiSVM()
-    # target = 'Dog_1'
-    target = 'Patient_1'
+    target = 'Dog_1'
+    # target = 'Patient_2'
     bags, bag_labels = load_kaggle_data_into_bag(target)
     bags, bag_labels = data_preprocess_musk_svm(bags)
     if split_ratio is None and cv_fold is None:
@@ -579,6 +579,7 @@ def miSVM_bag_on_kaggle(split_ratio=None, cv_fold=None):
 
     elif split_ratio:
         random_seed = random.randint(1, 1000)
+        print('random seed is:', random_seed)
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
@@ -595,7 +596,7 @@ def miSVM_bag_on_kaggle(split_ratio=None, cv_fold=None):
         accuracy = sum(test_label == p_bags_label) / len(test_bag)
         print('C = %.2f, gamma = %.2f, split ratio is %f, testing accuracy is %f' %
               (param_c, param_gamma, split_ratio, accuracy))
-        print('test label: ', bag_labels)
+        print('test label: ', test_label)
         print('probability: ', p_bags_prob)
         end_time = time.clock()
         print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
@@ -618,7 +619,9 @@ def miSVM_bag_on_kaggle(split_ratio=None, cv_fold=None):
     elif cv_fold:
         accuracy_list = list()
         n_bags = len(bags)
-        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=100)
+        random_seed = random.randint(1, 1000)
+        print('random seed is:', random_seed)
+        kf = cross_validation.KFold(n_bags, cv_fold, shuffle=True, random_state=random_seed)
         cf = 1
         p_values = list()
         test_labels = list()
@@ -697,8 +700,8 @@ if __name__ == '__main__':
 
     # EMDD_inst_on_kaggle(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=50)
 
-    miSVM_bag_on_kaggle()
-    # miSVM_bag_on_kaggle(split_ratio=0.2)
+    # miSVM_bag_on_kaggle()
+    miSVM_bag_on_kaggle(split_ratio=0.2)
     # miSVM_bag_on_kaggle(cv_fold=10)
 
     # miSVM_inst_on_kaggle()

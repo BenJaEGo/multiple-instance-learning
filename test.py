@@ -6,7 +6,7 @@ from data_utils import load_kaggle_data_into_bag
 
 
 def extract_feature_on_kaggle_data(target):
-    data_dir = r"E:\ZJU\kaggle\data"
+    data_dir = r"I:\ZJU\kaggle\data"
     data_type = 'preictal'
     parse_mat_data(data_dir, target, data_type, extract_fft_frequency_feature)
 
@@ -16,12 +16,32 @@ def extract_feature_on_kaggle_data(target):
 
 if __name__ == '__main__':
 
-
-    # target = 'Dog_1'
     target = 'Patient_1'
+    extract_feature_on_kaggle_data(target)
+
+    target = 'Patient_2'
 
     extract_feature_on_kaggle_data(target)
 
+    target = 'Dog_1'
 
-    # feature, label = load_kaggle_data_into_instance(target)
+    extract_feature_on_kaggle_data(target)
+
+    target = 'Dog_2'
+
+    extract_feature_on_kaggle_data(target)
+
+    target = 'Dog_3'
+
+    extract_feature_on_kaggle_data(target)
+
+    target = 'Dog_4'
+
+    extract_feature_on_kaggle_data(target)
+
+    target = 'Dog_5'
+
+    extract_feature_on_kaggle_data(target)
+
+    # load_kaggle_data_into_instance(target)
     # load_kaggle_data_into_bag(target)
