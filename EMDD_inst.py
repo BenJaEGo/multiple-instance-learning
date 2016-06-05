@@ -33,7 +33,7 @@ class EMDiverseDensity(object):
             target = params[0:n_dim]
             scale = params[n_dim:]
 
-        fun = 0
+        nll_cost = 0
 
         dist = np.mean(((instances - target) ** 2) * (scale ** 2), axis=1)
         inst_prob = np.exp(-dist)
@@ -41,32 +41,31 @@ class EMDiverseDensity(object):
             if labels[inst_idx] == 1:
                 if inst_prob[inst_idx] == 0:
                     inst_prob[inst_idx] = 1e-10
-                fun -= np.log(inst_prob[inst_idx])
+                nll_cost += -np.log(inst_prob[inst_idx])
             else:
                 if inst_prob[inst_idx] == 1:
                     inst_prob[inst_idx] = 1 - 1e-10
-                fun -= np.log(1 - inst_prob[inst_idx])
-        return fun
+                nll_cost += -np.log(1 - inst_prob[inst_idx])
+        return nll_cost
 
-    def em(self, bags, scale_indicator, init_target, init_scale, func_val_tol=1e-3):
+    def em(self, bags, scale_indicator, init_target, init_scale, tol=1e-5):
         target = init_target
         scale = init_scale
 
         # select an optimal instance from each bag according to current target and scale
-        func_val_diff = np.inf
-        prev_func_val = np.inf
-        final_func_val = 0
+        diff = np.inf
+        prev_nll_cost = np.inf
+        nll_cost = 0
 
-        init_func_val = 0
-        init_func_indicator = 1
+        init_nll_cost = 0
+        init_nll_cost_indicator = 1
 
-        debug_count = 0
-        while func_val_diff > func_val_tol:
+        em_loop_count = 0
+        while diff > tol:
 
-            debug_count += 1
-            if debug_count > 1000:
-                print(prev_func_val, final_func_val, func_val_diff, func_val_tol)
-                raise NotImplementedError('loop error, em loop number is %d.' % debug_count)
+            em_loop_count += 1
+            if em_loop_count > 1000:
+                raise NotImplementedError('em loop error, loop number is %d larger than 1000.' % em_loop_count)
 
             selected_instances = list()
             selected_labels = list()
@@ -84,81 +83,81 @@ class EMDiverseDensity(object):
 
             if scale_indicator == 1:
                 init_params = np.hstack((target, scale))
-                if init_func_indicator == 1:
-                    init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
-                    init_func_indicator = 0
-                r_params = optimize.minimize(self.diverse_density_nll, init_params,
-                                             args=(selected_instances, selected_labels,), method='L-BFGS-B')
-                target = r_params.x[0:n_dim]
-                scale = r_params.x[n_dim:]
+                if init_nll_cost_indicator == 1:
+                    init_nll_cost = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                    init_nll_cost_indicator = 0
+                optimized_params = optimize.minimize(self.diverse_density_nll, init_params,
+                                                     args=(selected_instances, selected_labels,), method='L-BFGS-B')
+                target = optimized_params.x[0:n_dim]
+                scale = optimized_params.x[n_dim:]
             else:
                 init_params = target
-                if init_func_indicator == 1:
-                    init_func_val = self.diverse_density_nll(init_params, selected_instances, selected_labels)
-                    init_func_indicator = 0
-                r_params = optimize.minimize(self.diverse_density_nll, init_params,
-                                             args=(selected_instances, selected_labels,), method='L-BFGS-B')
-                target = r_params.x
+                if init_nll_cost_indicator == 1:
+                    init_nll_cost = self.diverse_density_nll(init_params, selected_instances, selected_labels)
+                    init_nll_cost_indicator = 0
+                optimized_params = optimize.minimize(self.diverse_density_nll, init_params,
+                                                     args=(selected_instances, selected_labels,), method='L-BFGS-B')
+                target = optimized_params.x
                 scale = np.ones(n_dim,)
 
-            final_func_val = r_params.fun
-            func_val_diff = prev_func_val - final_func_val
-            prev_func_val = final_func_val
-        print('em loop number is %d. ' % debug_count, end='')
+            nll_cost = optimized_params.fun
+            diff = prev_nll_cost - nll_cost
+            prev_nll_cost = nll_cost
 
-        return target, scale, final_func_val, init_func_val
+        print('em phase completed, loop number is %d. ' % em_loop_count, end='')
+
+        return target, scale, nll_cost, init_nll_cost
 
     def train(self, bags, scale_indicator, epochs):
         n_bag = len(bags)
         n_pos_bag = 0
 
-        max_iter = 0
+        n_pos_instances = 0
         for bag in bags:
             if bag['label'] == 1:
                 n_pos_bag += 1
-                max_iter += bag['instances'].shape[0]
+                n_pos_instances += bag['instances'].shape[0]
 
-        epochs = min(max_iter, epochs)
-        print('total epochs number is %d' % epochs)
-        print('total number of training bags is %d. number of positive bags is %d, number of positive instances is: %d'
-              % (len(bags), n_pos_bag, max_iter))
+        epochs = min(n_pos_instances, epochs)
+        print('training, total epochs number is %d, #positive bags is %d, #positive instances is %d'
+              % (epochs, n_pos_bag, n_pos_instances))
 
         targets = list()
         scales = list()
-        func_values = list()
+        nll_costs = list()
 
         for epoch_idx in range(epochs):
             # randomly select a positive bag
             bag_idx = random.randint(0, n_bag - 1)
             while bags[bag_idx]['label'] == 0 or np.all(np.asarray(bags[bag_idx]['starting_point']) == 1):
                 bag_idx = random.randint(0, n_bag - 1)
-            # randomly select a positive instance that not used before
+            # randomly select a positive instance not used before
             [_, n_dim] = bags[bag_idx]['instances'].shape
-            starting_point_bag = np.asarray(bags[bag_idx]['starting_point'])
-            valuable_idx = np.asarray(np.nonzero(starting_point_bag == 0))
-            if valuable_idx.shape[1] == 1:
-                instance_idx = valuable_idx[0, 0]
+            starting_points = np.asarray(bags[bag_idx]['starting_point'])
+            valuable_starting_points = np.flatnonzero(starting_points == 0)
+            if valuable_starting_points.shape[0] == 1:
+                instance_idx = valuable_starting_points[0]
             else:
-                rand_idx = random.randint(0, valuable_idx.shape[1] - 1)
-                instance_idx = valuable_idx[0, rand_idx]
+                rand_idx = random.randint(0, valuable_starting_points.shape[0] - 1)
+                instance_idx = valuable_starting_points[rand_idx]
             bags[bag_idx]['starting_point'][instance_idx] = 1
 
             # scale is initialized to one
             print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. ' %
                   (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx), end='')
-            [target, scale, func_val, init_func_val] = self.em(bags,
+            [target, scale, nll_cost, init_nll_cost] = self.em(bags,
                                                                scale_indicator,
                                                                bags[bag_idx]['instances'][instance_idx, :],
                                                                np.ones(n_dim, ))
-            print('nll before optimization is %f, nll after optimization is %f' % (init_func_val, func_val))
+            print('nll before optimization is %f, nll after optimization is %f' % (init_nll_cost, nll_cost))
 
             targets.append(target)
             scales.append(scale)
-            func_values.append(func_val)
+            nll_costs.append(nll_cost)
 
-        return targets, scales, func_values
+        return targets, scales, nll_costs
 
-    def predict(self, targets, scales, func_values, bags, aggregate, threshold):
+    def predict(self, targets, scales, nll_costs, bags, aggregate, threshold):
 
         n_bag = len(bags)
 
@@ -167,17 +166,17 @@ class EMDiverseDensity(object):
         instances_prob = list()
         instances_label = list()
 
-        func_values = np.asarray(func_values)
+        nll_costs = np.asarray(nll_costs)
         targets = np.asarray(targets)
         scales = np.asarray(scales)
         # with maximal negative log likelihood
         if aggregate == 'max':
-            target_idx = np.argmax(func_values)
+            target_idx = np.argmax(nll_costs)
             target = targets[target_idx]
             scale = scales[target_idx]
         # with minimal negative log likelihood
         elif aggregate == 'min':
-            target_idx = np.argmin(func_values)
+            target_idx = np.argmin(nll_costs)
             target = targets[target_idx]
             scale = scales[target_idx]
         # with average negative log likelihood
@@ -185,7 +184,7 @@ class EMDiverseDensity(object):
             target = np.mean(targets, axis=0)
             scale = np.mean(scales, axis=0)
         else:
-            raise NotImplementedError('must be max, min or avg')
+            raise NotImplementedError('aggregate method must be max, min or avg')
 
         for bag_idx in range(n_bag):
             instances = bags[bag_idx]['instances']
@@ -198,5 +197,3 @@ class EMDiverseDensity(object):
             instances_label.append(inst_label)
 
         return bags_label, bags_prob, instances_label, instances_prob
-
-

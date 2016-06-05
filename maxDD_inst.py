@@ -3,7 +3,6 @@ import numpy as np
 import scipy.optimize as optimize
 import random
 
-
 _floatX = np.float32
 _intX = np.int8
 
@@ -24,7 +23,7 @@ class MaxDiverseDensity(object):
 
     def diverse_density_nll(self, params, bags):
 
-        fun = 0
+        nll_cost = 0
         n_bag = len(bags)
         n_dim = bags[0]['instances'].shape[1]
         # parameter length equal to feature length, only learn target vector
@@ -46,74 +45,77 @@ class MaxDiverseDensity(object):
             if bags[bag_idx]['label'] == 1:
                 if bags[bag_idx]['prob'] == 0:
                     bags[bag_idx]['prob'] = 1e-10
-                fun = fun - np.log(bags[bag_idx]['prob'])
+                nll_cost += - np.log(bags[bag_idx]['prob'])
             else:
                 if bags[bag_idx]['prob'] == 1:
                     bags[bag_idx]['prob'] = 1 - 1e-10
-                fun = fun - np.log(1 - bags[bag_idx]['prob'])
-        return fun
+                nll_cost += - np.log(1 - bags[bag_idx]['prob'])
+        return nll_cost
 
     def train(self, bags, scale_indicator, epochs):
 
         n_bag = len(bags)
 
         n_pos_bag = 0
-        max_iter = 0
+        n_pos_instances = 0
         for bag in bags:
             if bag['label'] == 1:
                 n_pos_bag += 1
-                max_iter += bag['instances'].shape[0]
+                n_pos_instances += bag['instances'].shape[0]
 
-        epochs = min(max_iter, epochs)
-        print('total epochs number is %d' % epochs)
-        print('number of training positive bags is %d, number of positive instances is: %d' % (n_pos_bag, max_iter))
+        epochs = min(n_pos_instances, epochs)
+        print('training, total epochs number is %d, #positive bags is %d, #positive instances is %d'
+              % (epochs, n_pos_bag, n_pos_instances))
 
         targets = list()
         scales = list()
-        func_values = list()
+        nll_costs = list()
 
         for epoch_idx in range(epochs):
             bag_idx = random.randint(0, n_bag - 1)
             while bags[bag_idx]['label'] == 0 or np.all(np.asarray(bags[bag_idx]['starting_point']) == 1):
                 bag_idx = random.randint(0, n_bag - 1)
-                # bag_idx = (bag_idx + 1) % n_bag
 
             [_, n_dim] = bags[bag_idx]['instances'].shape
-            starting_point_bag = np.asarray(bags[bag_idx]['starting_point'])
-            valuable_idx = np.asarray(np.nonzero(starting_point_bag == 0))
-            if valuable_idx.shape[1] == 1:
-                instance_idx = valuable_idx[0, 0]
+            starting_points = np.asarray(bags[bag_idx]['starting_point'])
+            valuable_starting_points = np.flatnonzero(starting_points == 0)
+            if valuable_starting_points.shape[0] == 1:
+                instance_idx = valuable_starting_points[0]
             else:
-                rand_idx = random.randint(0, valuable_idx.shape[1]-1)
-                instance_idx = valuable_idx[0, rand_idx]
+                rand_idx = random.randint(0, valuable_starting_points.shape[0] - 1)
+                instance_idx = valuable_starting_points[rand_idx]
+
             bags[bag_idx]['starting_point'][instance_idx] = 1
 
             if scale_indicator == 1:
                 init_params = np.hstack((bags[bag_idx]['instances'][instance_idx, :], np.ones([n_dim, ])))
-                r_params = optimize.minimize(self.diverse_density_nll, init_params, args=(bags,), method='L-BFGS-B')
                 print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. '
-                      'nll before optimization is %f, nll after optimization is %f' %
+                      'nll before optimization is %f, ' %
                       (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
-                       self.diverse_density_nll(init_params, bags),
-                       self.diverse_density_nll(r_params.x, bags)))
-                targets.append(r_params.x[:n_dim])
-                scales.append(r_params.x[n_dim:])
-                func_values.append(r_params.fun)
+                       self.diverse_density_nll(init_params, bags)), end='')
+                optimized_params = optimize.minimize(self.diverse_density_nll,
+                                                     init_params,
+                                                     args=(bags,),
+                                                     method='L-BFGS-B')
+                print('nll after optimization is %f' % self.diverse_density_nll(optimized_params.x, bags))
+                targets.append(optimized_params.x[:n_dim])
+                scales.append(optimized_params.x[n_dim:])
+                nll_costs.append(optimized_params.fun)
 
             else:
                 init_params = bags[bag_idx]['instances'][instance_idx, :]
-                r_params = optimize.minimize(self.diverse_density_nll, init_params, args=(bags,), method='L-BFGS-B')
                 print('epoch %d, selected instance is from <bag %d, bag label %d, instance %d>. '
-                      'nll before optimization is %f, nll after optimization is %f' %
+                      'nll before optimization is %f, ' %
                       (epoch_idx, bag_idx, bags[bag_idx]['label'], instance_idx,
-                       self.diverse_density_nll(init_params, bags),
-                       self.diverse_density_nll(r_params.x, bags)))
-                targets.append(r_params.x)
+                       self.diverse_density_nll(init_params, bags)), end='')
+                optimized_params = optimize.minimize(self.diverse_density_nll, init_params, args=(bags,), method='L-BFGS-B')
+                print('nll after optimization is %f' % self.diverse_density_nll(optimized_params.x, bags))
+                targets.append(optimized_params.x)
                 scales.append(np.ones(n_dim,))
-                func_values.append(r_params.fun)
-        return targets, scales, func_values
+                nll_costs.append(optimized_params.fun)
+        return targets, scales, nll_costs
 
-    def predict(self, targets, scales, func_values, bags, aggregate, threshold):
+    def predict(self, targets, scales, nll_costs, bags, aggregate, threshold):
 
         n_bag = len(bags)
 
@@ -122,17 +124,17 @@ class MaxDiverseDensity(object):
         instances_prob = list()
         instances_label = list()
 
-        func_values = np.asarray(func_values)
+        nll_costs = np.asarray(nll_costs)
         targets = np.asarray(targets)
         scales = np.asarray(scales)
         # with maximal negative log likelihood
         if aggregate == 'max':
-            target_idx = np.argmax(func_values)
+            target_idx = np.argmax(nll_costs)
             target = targets[target_idx]
             scale = scales[target_idx]
         # with minimal negative log likelihood
         elif aggregate == 'min':
-            target_idx = np.argmin(func_values)
+            target_idx = np.argmin(nll_costs)
             target = targets[target_idx]
             scale = scales[target_idx]
         # with average negative log likelihood
@@ -140,7 +142,7 @@ class MaxDiverseDensity(object):
             target = np.mean(targets, axis=0)
             scale = np.mean(scales, axis=0)
         else:
-            raise NotImplementedError('must be max, min or avg')
+            raise NotImplementedError('aggregate method must be max, min or avg')
 
         for bag_idx in range(n_bag):
             instances = bags[bag_idx]['instances']
@@ -153,4 +155,3 @@ class MaxDiverseDensity(object):
             instances_label.append(inst_label)
 
         return bags_label, bags_prob, instances_label, instances_prob
-

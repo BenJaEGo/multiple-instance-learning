@@ -16,7 +16,7 @@ class MiSVM(object):
         inst_labels = list()
 
         for bag in bags:
-            if bag['label'] == -1:
+            if bag['label'] == 0:
                 instances.extend(bag['instances'])
                 inst_labels.extend(bag['inst_labels'])
             elif bag['label'] == 1:
@@ -37,13 +37,13 @@ class MiSVM(object):
 
         max_idx = 0
         for bag in bags:
-            if bag['label'] == -1:
+            if bag['label'] == 0:
                 instances.extend(bag['instances'])
                 inst_labels.extend(bag['inst_labels'])
             elif bag['label'] == 1:
                 _, n_dim = bag['instances'].shape
-                max_prob_inst = bag['instances'][selector[max_idx]].reshape([1, n_dim])
-                instances.extend(max_prob_inst)
+                max_dist_inst = bag['instances'][selector[max_idx]].reshape([1, n_dim])
+                instances.extend(max_dist_inst)
                 inst_labels.append(bag['label'])
                 max_idx += 1
             else:
@@ -75,7 +75,7 @@ class MiSVM(object):
 
         selector = self.calc_selector(bags, clf)
         x_train, y_train = self.collect_insts_labels(bags, selector)
-        past_selector_idx = selector
+        prev_selector = selector
 
         while True:
             n_iter += 1
@@ -86,32 +86,35 @@ class MiSVM(object):
 
             selector = self.calc_selector(bags, clf)
             x_train, y_train = self.collect_insts_labels(bags, selector)
-            selector_diff = past_selector_idx - selector
-            past_selector_idx = selector
+            selector_diff = prev_selector - selector
+            prev_selector = selector
 
             if np.sum(selector_diff) == 0:
-                print('iter %d done, selector difference %d, break' % (n_iter, abs(np.sum(selector_diff))))
+                print('iter %d done, selector difference is %d, break' % (n_iter, abs(np.sum(selector_diff))))
                 break
-
-            print('iter %d done, selector difference %d' % (n_iter, abs(np.sum(selector_diff))))
+            else:
+                print('iter %d done, selector difference is %d' % (n_iter, abs(np.sum(selector_diff))))
 
         return clf, bags
 
     def predict(self, bags, clf):
-        p_bag_labels = list()
-        p_bag_prob = list()
+        p_bags_label = list()
+        p_bags_dist = list()
         for bag in bags:
             x = bag['instances']
-            y = bag['inst_labels']
-            p_labels = clf.predict(x)
-            bag_label = np.max(p_labels)
-            p_bag_labels.append(bag_label)
-            # negative label (-1) appears before positive label (1)
-            p_bag_prob.append(np.max(clf.predict_proba(x)[:, 1]))
+            p_inst_labels = clf.predict(x)
+            p_bag_label = np.max(p_inst_labels)
 
-        p_bag_labels = np.asarray(p_bag_labels)
-        p_bag_prob = np.asarray(p_bag_prob)
-        return p_bag_labels, p_bag_prob
+            p_inst_dist = clf.decision_function(x)
+
+            p_bag_dist = np.max(p_inst_dist)
+
+            p_bags_label.append(p_bag_label)
+            p_bags_dist.append(p_bag_dist)
+
+        p_bags_label = np.asarray(p_bags_label).squeeze()
+        p_bags_dist = np.asarray(p_bags_dist).squeeze()
+        return p_bags_label, p_bags_dist
 
     def check_solution(self, bags):
         for bag in bags:
@@ -122,8 +125,8 @@ class MiSVM(object):
                     raise RuntimeError('solution check failed for positive bags..something wrong happened..')
         print('positive bags check ends.')
         for bag in bags:
-            if bag['label'] == -1:
-                if np.all(np.asarray(bag['inst_labels']) == -1):
+            if bag['label'] == 0:
+                if np.all(np.asarray(bag['inst_labels']) == 0):
                     pass
                 else:
                     raise RuntimeError('solution check failed for negative bags..something wrong happened..')
