@@ -307,13 +307,9 @@ def load_kaggle_data_into_bag(target, feature_dir):
     interictal_feature = np.asarray(interictal_feature)
     interictal_label = np.asarray(interictal_label)
 
-    # n_trial = 18
-    # interictal_feature = interictal_feature[0:n_trial]
-    # interictal_label = interictal_label[0:n_trial]
-    # n_trial = 12
-    # preictal_feature = preictal_feature[0:n_trial]
-    # preictal_label = preictal_label[0:n_trial]
-
+    n_trial = 12
+    interictal_feature = interictal_feature[0:n_trial]
+    interictal_label = interictal_label[0:n_trial]
 
     print('preictal feature shape: ', preictal_feature.shape)
     print('preictal label shape: ', preictal_label.shape)
