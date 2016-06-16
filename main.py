@@ -16,6 +16,11 @@ from preprocess_utils import data_preprocess_musk_dd
 from preprocess_utils import data_preprocess_musk_svm
 
 
+from data_utils import load_kaggle_data_into_bag
+from preprocess_utils import normalized_bag
+from preprocess_utils import normalized_inst
+from preprocess_utils import scale_bag
+from preprocess_utils import scale_inst
 
 
 def maxDD_inst_method(split_ratio=None, cv_fold=None, aggregate='min', threshold=0.5, scale_indicator=1, epochs=10):
@@ -26,7 +31,7 @@ def maxDD_inst_method(split_ratio=None, cv_fold=None, aggregate='min', threshold
 
     file_path = 'musk1.txt'
 
-    bags, bag_labels = load_musk1_data(file_path)
+    bags, bag_labels = load_musk_data(file_path)
     bags = data_preprocess_musk_dd(bags)
     if split_ratio is None and cv_fold is None:
         print('parameters setting: split_ratio = None, cv_fold = None, aggregate = %s, threshold = %.4f, '
@@ -164,10 +169,15 @@ def EMDD_inst_method(split_ratio=None, cv_fold=None, aggregate='min', threshold=
     start_time = time.clock()
     dd_classifier = EMDiverseDensity()
 
-    file_path = 'musk1.txt'
+    # file_path = 'musk1.txt'
+    # bags, bag_labels = load_musk_data(file_path)
+    # bags = data_preprocess_musk_dd(bags)
 
-    bags, bag_labels = load_musk1_data(file_path)
-    bags = data_preprocess_musk_dd(bags)
+    target = 'Patient_1'
+    feature_dir = 'fft_feature'
+    bags, bag_labels = load_kaggle_data_into_bag(target, feature_dir)
+    bags, bag_labels = scale_bag(bags)
+
     if split_ratio is None and cv_fold is None:
         print('parameters setting: split_ratio = None, cv_fold = None, aggregate = %s, threshold = %.4f, '
               'scale_indicator = %d, epochs = %d' % (aggregate, threshold, scale_indicator, epochs))
@@ -195,10 +205,12 @@ def EMDD_inst_method(split_ratio=None, cv_fold=None, aggregate='min', threshold=
         print('parameters setting: split ratio = %f, cv_fold = None, aggregate = %s, '
               'threshold = %.4f, scale_indicator = %d, epochs = %d' %
               (split_ratio, aggregate, threshold, scale_indicator, epochs))
+        random_seed = random.randint(1, 1000)
+        print('random seed is:', random_seed)
         train_bag, test_bag, train_label, test_label = cross_validation.train_test_split(bags,
                                                                                          bag_labels,
                                                                                          test_size=split_ratio,
-                                                                                         random_state=0)
+                                                                                         random_state=random_seed)
 
         targets, scales, nll_costs = dd_classifier.train(train_bag, scale_indicator, epochs)
         p_bags_label, p_bags_prob, p_instances_label, p_instances_prob = dd_classifier.predict(targets, scales,
@@ -206,6 +218,9 @@ def EMDD_inst_method(split_ratio=None, cv_fold=None, aggregate='min', threshold=
                                                                                                aggregate, threshold)
         accuracy = sum(test_label == p_bags_label) / len(test_bag)
         print('split ratio is %f, testing accuracy is %f' % (split_ratio, accuracy))
+        print('test label: ', np.asarray(test_label).squeeze())
+        print('predict label:', p_bags_label)
+        print('predict probabilities: ', p_bags_prob)
         end_time = time.clock()
         print(('The code for file ' + os.path.split(__file__)[1] + ' ran for %.1fs' % (end_time - start_time)))
 
@@ -306,7 +321,7 @@ def EMDD_bag_method(split_ratio=None, cv_fold=None, threshold=0.5, scale_indicat
 
     file_path = 'musk1.txt'
 
-    bags, bag_labels = load_musk1_data(file_path)
+    bags, bag_labels = load_musk_data(file_path)
     bags = data_preprocess_musk_dd(bags)
     if split_ratio is None and cv_fold is None:
         print('parameters setting: split_ratio = None, cv_fold = None, threshold = %.4f, '
@@ -601,10 +616,16 @@ def miSVM_bag_method(split_ratio=None, cv_fold=None):
     start_time = time.clock()
     classifier = MiSVM()
 
-    file_path = 'musk1.txt'
+    # file_path = 'musk1.txt'
+    # bags, bag_labels = load_musk_data(file_path)
+    # bags, bag_labels = data_preprocess_musk_svm(bags)
 
-    bags, bag_labels = load_musk_data(file_path)
-    bags, bag_labels = data_preprocess_musk_svm(bags)
+    target = 'Patient_1'
+    feature_dir = 'fft_feature'
+    bags, bag_labels = load_kaggle_data_into_bag(target, feature_dir)
+    bags, bag_labels = normalized_bag(bags)
+    bag_labels_vector = bag_labels
+    bag_labels = label_binarize(bag_labels, classes=[0, 1])
 
     if split_ratio is None and cv_fold is None:
 
@@ -616,9 +637,9 @@ def miSVM_bag_method(split_ratio=None, cv_fold=None):
         param_gamma = params['gamma']
 
         p_bags_label, p_bags_dist = classifier.predict(bags, model)
-        accuracy = sum(bag_labels == p_bags_label) / len(bags)
+        accuracy = sum(bag_labels_vector == p_bags_label) / len(bags)
         print('C = %.2f, gamma = %.2f, acc = %f' % (param_c, param_gamma, accuracy))
-        print('test label: ', bag_labels)
+        print('test label: ', bag_labels_vector)
         print('predict label:', p_bags_label)
         print('predict distance: ', p_bags_dist)
         end_time = time.clock()
@@ -651,10 +672,10 @@ def miSVM_bag_method(split_ratio=None, cv_fold=None):
         param_gamma = params['gamma']
 
         p_bags_label, p_bags_dist = classifier.predict(test_bag, model)
-        accuracy = sum(test_label == p_bags_label) / len(test_bag)
+        accuracy = sum(np.asarray(test_label).squeeze() == p_bags_label) / len(test_bag)
         print('C = %.2f, gamma = %.2f, split ratio = %f, testing accuracy = %f' %
               (param_c, param_gamma, split_ratio, accuracy))
-        print('test label: ', test_label)
+        print('test label: ', np.asarray(test_label).squeeze())
         print('predict label:', p_bags_label)
         print('predict distance: ', p_bags_dist)
         end_time = time.clock()
@@ -712,7 +733,7 @@ def miSVM_bag_method(split_ratio=None, cv_fold=None):
             accuracy = sum(np.asarray(test_label).squeeze() == p_bags_label) / len(test_bag)
             accuracy_list.append(accuracy)
             print('completed fold %d, accuracy is %f' % (cf, accuracy))
-            print('test label: ', test_label)
+            print('test label: ', np.asarray(test_label).squeeze())
             print('predict label:', p_bags_label)
             print('predict distance: ', p_bags_dist)
 
@@ -759,7 +780,9 @@ if __name__ == '__main__':
 
     # maxDD_inst_method(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=1)
 
-    # EMDD_inst_method(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=1)
+    # EMDD_inst_method(split_ratio=0.2, cv_fold=None, aggregate='avg', threshold=0.5, scale_indicator=1, epochs=10)
+
+    EMDD_inst_method(split_ratio=None, cv_fold=10, aggregate='min', threshold=0.5, scale_indicator=1, epochs=10)
     # EMDD_bag_method(split_ratio=None, cv_fold=10, threshold=0.5, scale_indicator=1, epochs=3)
 
     # miSVM_inst_method()
@@ -768,4 +791,4 @@ if __name__ == '__main__':
 
     # miSVM_bag_method()
     # miSVM_bag_method(split_ratio=0.2)
-    miSVM_bag_method(cv_fold=10)
+    # miSVM_bag_method(cv_fold=10)

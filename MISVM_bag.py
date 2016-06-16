@@ -67,7 +67,7 @@ class MiSVM(object):
         n_iter = 0
 
         x_train, y_train = self.collect_initial_insts_labels(bags)
-        clf = svm.SVC(kernel='rbf', C=1, gamma=0.1, probability=True, decision_function_shape='ovr')
+        clf = svm.SVC(kernel='rbf', C=100, gamma=0.1, probability=True, decision_function_shape='ovr')
         print("iter %d, Fitting the classifier to the training set" % n_iter)
         t0 = time.time()
         clf.fit(x_train, y_train)

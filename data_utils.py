@@ -104,7 +104,7 @@ def load_mat_data(data_dir, target, data_type):
 
 
 # data_type is one of ('preictal', 'interictal', 'test')
-def parse_mat_data(data_dir, target, data_type, preprocess=None):
+def parse_mat_data(data_dir, feature_dir, target, data_type, preprocess=None):
 
     feature = list()
     mat_data = load_mat_data(data_dir, target, data_type)
@@ -121,7 +121,7 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
 
     slice_idx = 0
 
-    feature_dir = 'fft_time_corr_freq_corr'
+
     for idx in range(0, n_bag):
         pkl_filename = '%s\%s_%s_feature_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         with gzip.open(pkl_filename, 'wb') as f:
@@ -142,7 +142,7 @@ def parse_mat_data(data_dir, target, data_type, preprocess=None):
         slice_idx += 1
 
 
-def load_kaggle_data_into_instance(target):
+def load_kaggle_data_into_instance(target, feature_dir):
 
     data_type = 'preictal'
 
@@ -152,7 +152,7 @@ def load_kaggle_data_into_instance(target):
     slice_idx = 0
     done = False
     while not done:
-        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        filename = '%s\%s_%s_feature_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -166,7 +166,7 @@ def load_kaggle_data_into_instance(target):
     slice_idx = 0
     done = False
     while not done:
-        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        filename = '%s\%s_%s_label_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -187,7 +187,7 @@ def load_kaggle_data_into_instance(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s_%s_feature_%d.pkl.gz' % (target, data_type, slice_idx)
+        filename = '%s\%s_%s_feature_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -201,7 +201,7 @@ def load_kaggle_data_into_instance(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s_%s_label_%d.pkl.gz' % (target, data_type, slice_idx)
+        filename = '%s\%s_%s_label_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -231,9 +231,9 @@ def load_kaggle_data_into_instance(target):
     return feature, label
 
 
-def load_kaggle_data_into_bag(target):
+def load_kaggle_data_into_bag(target, feature_dir):
 
-    data_dir = 'fft_time_corr_freq_corr'
+    # feature_dir = 'fft_time_corr_freq_corr'
 
     data_type = 'preictal'
     preictal_feature = list()
@@ -242,7 +242,7 @@ def load_kaggle_data_into_bag(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s\%s_%s_feature_%d.pkl.gz' % (data_dir, target, data_type, slice_idx)
+        filename = '%s\%s_%s_feature_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -256,7 +256,7 @@ def load_kaggle_data_into_bag(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s\%s_%s_label_%d.pkl.gz' % (data_dir, target, data_type, slice_idx)
+        filename = '%s\%s_%s_label_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -277,7 +277,7 @@ def load_kaggle_data_into_bag(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s\%s_%s_feature_%d.pkl.gz' % (data_dir, target, data_type, slice_idx)
+        filename = '%s\%s_%s_feature_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -291,7 +291,7 @@ def load_kaggle_data_into_bag(target):
     done = False
     slice_idx = 0
     while not done:
-        filename = '%s\%s_%s_label_%d.pkl.gz' % (data_dir, target, data_type, slice_idx)
+        filename = '%s\%s_%s_label_%d.pkl.gz' % (feature_dir, target, data_type, slice_idx)
         if os.path.exists(filename):
             with gzip.open(filename, 'r') as f:
                 feature_slice = pickle.load(f)
@@ -306,6 +306,14 @@ def load_kaggle_data_into_bag(target):
     preictal_label = np.asarray(preictal_label)
     interictal_feature = np.asarray(interictal_feature)
     interictal_label = np.asarray(interictal_label)
+
+    # n_trial = 18
+    # interictal_feature = interictal_feature[0:n_trial]
+    # interictal_label = interictal_label[0:n_trial]
+    # n_trial = 12
+    # preictal_feature = preictal_feature[0:n_trial]
+    # preictal_label = preictal_label[0:n_trial]
+
 
     print('preictal feature shape: ', preictal_feature.shape)
     print('preictal label shape: ', preictal_label.shape)
